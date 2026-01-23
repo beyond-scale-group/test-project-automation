@@ -1,0 +1,32 @@
+name: Test Project Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_case:
+        description: 'Test case ID (e.g., PA-V-001)'
+        required: true
+        type: string
+  issues:
+    types: [opened, labeled]
+  pull_request:
+    types: [opened, labeled]
+
+jobs:
+  automate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Project Automation
+        id: automation
+        uses: beyond-scale-group/bsg-claude-plugins/github-actions/project-automation@main
+        with:
+          project-number: 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN_FULL_PROJECT }}
+          
+      - name: Check result
+        run: |
+          echo "Status: ${{ steps.automation.outputs.status }}"
+          echo "Card ID: ${{ steps.automation.outputs.card_id }}"
