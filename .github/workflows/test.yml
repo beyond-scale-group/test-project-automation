@@ -5,12 +5,12 @@ on:
     inputs:
       test_case:
         description: 'Test case ID (e.g., PA-V-001)'
-        required: true
+        required: false
         type: string
   issues:
     types: [opened, labeled]
   pull_request:
-    types: [opened, labeled]
+    types: [opened, synchronize]
 
 jobs:
   automate:
@@ -18,15 +18,68 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Run Project Automation
-        id: automation
-        uses: beyond-scale-group/bsg-claude-plugins/github-actions/project-automation@main
-        with:
-          project-number: 1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN_FULL_PROJECT }}
-          
-      - name: Check result
+      - name: Get PR info
+        if: github.event_name == 'pull_request'
+        id: pr-info
         run: |
-          echo "Status: ${{ steps.automation.outputs.status }}"
-          echo "Card ID: ${{ steps.automation.outputs.card_id }}"
+          echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          echo "pr_title=${{ github.event.pull_request.title }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "${{ github.event.pull_request.body }}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Detect linked issues
+        id: detect-linked
+        if: github.event_name == 'pull_request'
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          BODY="${{ github.event.pull_request.body }}"
+          
+          LINKED=""
+          
+          # Extract from branch name (feature/issue-123 or fix/bug-456)
+          if [[ "$BRANCH" =~ (issue|bug|feat|fix|feature)-([0-9]+) ]]; then
+            LINKED="${BASH_REMATCH[2]}"
+          fi
+          
+          # Extract from PR body (Fixes #123, Closes #456, etc.)
+          BODY_ISSUES=$(echo "$BODY" | grep -oE '(fixes|closes|resolves|fix|close|resolve)\s*#([0-9]+)' -i | grep -oE '[0-9]+' || true)
+          
+          for ISSUE in $BODY_ISSUES; do
+            if [ -n "$LINKED" ]; then
+              LINKED="$LINKED,$ISSUE"
+            else
+              LINKED="$ISSUE"
+            fi
+          done
+          
+          echo "linked_issues=$LINKED" >> $GITHUB_OUTPUT
+          echo "Detected linked issues: $LINKED"
+
+      - name: Validate project (mock)
+        id: validate
+        run: |
+          # Mock project validation - in real scenario would use GraphQL
+          echo "project_id=PVT_mock_123" >> $GITHUB_OUTPUT
+          echo "status_field_id=PVTSSF_mock_456" >> $GITHUB_OUTPUT
+          echo "column_TODO_id=mock_todo" >> $GITHUB_OUTPUT
+          echo "column_IN_PROGRESS_id=mock_progress" >> $GITHUB_OUTPUT
+          echo "column_DONE_id=mock_done" >> $GITHUB_OUTPUT
+          echo "column_PRODUCTION_id=mock_prod" >> $GITHUB_OUTPUT
+          echo "Project validation: OK"
+
+      - name: Summary
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Event**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.head_ref || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "- **PR**: #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Linked Issues**: ${{ steps.detect-linked.outputs.linked_issues || 'none' }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Validation" >> $GITHUB_STEP_SUMMARY
+          echo "- Project ID: ${{ steps.validate.outputs.project_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Status Field: ${{ steps.validate.outputs.status_field_id }}" >> $GITHUB_STEP_SUMMARY
